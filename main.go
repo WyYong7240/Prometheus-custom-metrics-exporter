@@ -11,6 +11,7 @@ import (
 )
 
 func main() {
+	// WYB
 	// 初始化收集各个指标信息
 	hardwareinfocollector.CollectCPUInfo()
 
