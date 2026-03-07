@@ -11,29 +11,45 @@ import (
 )
 
 func main() {
-	// WYB
-	// 初始化收集各个指标信息
+	// 1. 初始化收集各个指标信息 (注册到 Prometheus)
+	// 内存指标在 hardwareinfocollector 的 init() 函数中已经注册过了
+	// 我们先进行一次初始采集
 	hardwareinfocollector.CollectCPUInfo()
+	hardwareinfocollector.UpdateMemoryMetrics()
 
-	// 设置 HTTP 路由
+	// 2. 设置 HTTP 路由
+	// Prometheus 抓取端点
 	http.Handle("/metrics", promhttp.Handler())
 
-	// 设置触发所有信息更新的路由
+	// 设置手动触发更新的路由
 	http.HandleFunc("/refresh", func(w http.ResponseWriter, r *http.Request) {
 		hardwareinfocollector.CollectCPUInfo()
-		w.Write([]byte("CPU info refreshed"))
+		hardwareinfocollector.UpdateMemoryMetrics() // 调用新修复的内存采集函数
+		w.Write([]byte("Hardware info (CPU & Memory) refreshed"))
 	})
 
-	// 当访问根路径/时,设置访问数量增加
+	// 业务逻辑路由
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-		start := time.Now()                                                   // 记录当前时间
-		httprequesttotal.RequestCounter.Inc()                                 // 调用INc方法，增加请求计数
-		httprequesttotal.RequestDuration.Observe(time.Since(start).Seconds()) // 调用Observe记录请求耗时
-		writer.Write([]byte("Hello, Prometheus!"))                            // 返回响应内容
+		start := time.Now()
+		httprequesttotal.RequestCounter.Inc()
+		httprequesttotal.RequestDuration.Observe(time.Since(start).Seconds())
+		writer.Write([]byte("Hello, Prometheus!"))
 	})
 
-	fmt.Println("Starting server on :30100")
+	// 3. (可选) 定时自动刷新硬件信息，防止长期运行数据过时
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute) // 每5分钟更新一次硬件状态
+			hardwareinfocollector.UpdateMemoryMetrics()
+		}
+	}()
+
+	fmt.Println("Starting server on :30012")
 	fmt.Println("Access /metrics for Prometheus metrics")
-	fmt.Println("Access /refresh to refresh CPU info")
-	http.ListenAndServe(":30100", nil)
+	fmt.Println("Access /refresh to manually refresh hardware info")
+
+	err := http.ListenAndServe(":30012", nil)
+	if err != nil {
+		fmt.Printf("Server failed: %s\n", err)
+	}
 }

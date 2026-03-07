@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hardware-exporter-sm
+  namespace: monitoring
+  # labels:
+  #   release: prometheus-stack # 必须匹配你 kube-prometheus 的 label
+spec:
+  selector:
+    matchLabels:
+      app: hardware-exporter # 匹配上面 Service 的 label
+  endpoints:
+  - port: http-metrics
+    interval: 30s
+    path: /metrics

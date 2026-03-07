@@ -12,7 +12,7 @@ import (
 var (
 	cpuModelGauge = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "cpu_model_info",
+			Name: "hardware_cpu_model_info",
 			Help: "CPU model information, value is always 1, labels contain details",
 		},
 		[]string{"model", "vendor", "architecture"},
@@ -20,21 +20,21 @@ var (
 
 	cpuCoresGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "cpu_cores_total",
+			Name: "hardware_cpu_cores_total",
 			Help: "Total number of CPU cores",
 		},
 	)
 
 	cpuThreadsGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "cpu_threads_total",
+			Name: "hardware_cpu_threads_total",
 			Help: "Total number of CPU threads",
 		},
 	)
 
 	cpuFrequencyGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "cpu_frequency_hertz",
+			Name: "hardware_cpu_frequency_hertz",
 			Help: "CPU frequency in Hz",
 		},
 	)

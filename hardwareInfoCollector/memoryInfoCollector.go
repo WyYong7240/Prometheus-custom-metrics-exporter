@@ -1,8 +1,8 @@
 package hardwareinfocollector
 
 import (
-	// "bufio"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	// 使用 Describe/Collect 模式或在采集时 Reset 以防止旧数据残留
 	memorySlotGauge = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "hardware_memory_slot_info",
@@ -20,122 +21,99 @@ var (
 	memoryTotalSlotsGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "hardware_memory_slots_total",
-			Help: "Total number of memory slots",
+			Help: "Total number of memory slots detected",
 		},
 	)
 )
 
 func init() {
 	prometheus.MustRegister(memorySlotGauge, memoryTotalSlotsGauge)
-	collectMemoryDMI()
 }
 
-func collectMemoryDMI() {
-	cmd := exec.Command("dmidecode", "-t", "17")
-	output, err := cmd.Output()
+// UpdateMemoryMetrics 建议在 Prometheus 采集请求到达时调用此函数
+func UpdateMemoryMetrics() {
+	// 每次采集前清空旧指标，防止插槽物理变动后旧数据依然存在
+	memorySlotGauge.Reset()
+
+	output, err := exec.Command("dmidecode", "-t", "17").Output()
 	if err != nil {
 		return
 	}
 
-	// scanner := bufio.NewScanner(strings.NewReader(string(output)))
-	// var currentSlot, size, typ, speed, manu, part string
-	// totalSlots := 0
+	// 按照 DMI 结构体块分割
+	blocks := strings.Split(string(output), "Memory Device")
+	totalSlots := 0
+	populatedSlots := 0
 
-	// for scanner.Scan() {
-	// 	line := strings.TrimSpace(scanner.Text())
-	// 	if strings.HasPrefix(line, "Memory Device") {
-	// 		// 新内存条开始
-	// 		currentSlot = ""
-	// 		size = "0"
-	// 		typ = "unknown"
-	// 		speed = "0"
-	// 		manu = "unknown"
-	// 		part = "unknown"
-	// 		totalSlots++
-	// 	} else if strings.HasPrefix(line, "Locator:") {
-	// 		currentSlot = strings.TrimSpace(strings.TrimPrefix(line, "Locator:"))
-	// 	} else if strings.HasPrefix(line, "Size:") {
-	// 		if strings.Contains(line, "No Module Installed") {
-	// 			continue // 跳过空插槽
-	// 		}
-	// 		sizeStr := strings.TrimSpace(strings.TrimPrefix(line, "Size:"))
-	// 		if strings.HasSuffix(sizeStr, "GB") {
-	// 			val, _ := strconv.ParseFloat(strings.TrimSuffix(sizeStr, " GB"), 64)
-	// 			size = strconv.FormatInt(int64(val*1e9), 10)
-	// 		} else if strings.HasSuffix(sizeStr, "MB") {
-	// 			val, _ := strconv.ParseFloat(strings.TrimSuffix(sizeStr, " MB"), 64)
-	// 			size = strconv.FormatInt(int64(val*1e6), 10)
-	// 		}
-	// 	} else if strings.HasPrefix(line, "Type:") {
-	// 		typ = strings.TrimSpace(strings.TrimPrefix(line, "Type:"))
-	// 	} else if strings.HasPrefix(line, "Speed:") {
-	// 		speedStr := strings.TrimSpace(strings.TrimPrefix(line, "Speed:"))
-	// 		if strings.HasSuffix(speedStr, "MT/s") {
-	// 			speed = strings.TrimSuffix(speedStr, " MT/s")
-	// 		}
-	// 	} else if strings.HasPrefix(line, "Manufacturer:") {
-	// 		manu = strings.TrimSpace(strings.TrimPrefix(line, "Manufacturer:"))
-	// 	} else if strings.HasPrefix(line, "Part Number:") {
-	// 		part = strings.TrimSpace(strings.TrimPrefix(line, "Part Number:"))
-	// 	}
-	// }
-
-	// 实际上上面逻辑不完整（需按块解析），这里简化：只处理已填充的插槽
-	// 更健壮的做法是按空行分段，但为简洁起见，假设每遇到 "Memory Device" 就重置
-
-	// 重新解析（更可靠方式）
-	blocks := strings.Split(string(output), "\n\n")
-	populated := 0
 	for _, block := range blocks {
-		if !strings.Contains(block, "Memory Device") {
+		// 跳过非设备块（如 header）
+		if !strings.Contains(block, "Size:") {
 			continue
 		}
-		lines := strings.Split(block, "\n")
-		slot := "unknown"
-		sizeBytes := "0"
-		memType := "unknown"
-		speedMhz := "0"
-		manufacturer := "unknown"
-		partNumber := "unknown"
-		populatedFlag := false
 
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "Locator:") {
-				slot = strings.TrimSpace(strings.TrimPrefix(line, "Locator:"))
-			} else if strings.HasPrefix(line, "Size:") {
-				sizeStr := strings.TrimSpace(strings.TrimPrefix(line, "Size:"))
-				if !strings.Contains(sizeStr, "No Module Installed") {
-					populatedFlag = true
-					if strings.HasSuffix(sizeStr, "GB") {
-						val, _ := strconv.ParseFloat(strings.TrimSuffix(sizeStr, " GB"), 64)
-						sizeBytes = strconv.FormatInt(int64(val*1e9), 10)
-					} else if strings.HasSuffix(sizeStr, "MB") {
-						val, _ := strconv.ParseFloat(strings.TrimSuffix(sizeStr, " MB"), 64)
-						sizeBytes = strconv.FormatInt(int64(val*1e6), 10)
-					}
-				}
-			} else if strings.HasPrefix(line, "Type:") {
-				memType = strings.TrimSpace(strings.TrimPrefix(line, "Type:"))
-			} else if strings.HasPrefix(line, "Speed:") {
-				speedStr := strings.TrimSpace(strings.TrimPrefix(line, "Speed:"))
-				if speedStr != "Unknown" {
-					speedMhz = strings.Fields(speedStr)[0] // 取数字部分
-				}
-			} else if strings.HasPrefix(line, "Manufacturer:") {
-				manufacturer = strings.TrimSpace(strings.TrimPrefix(line, "Manufacturer:"))
-			} else if strings.HasPrefix(line, "Part Number:") {
-				partNumber = strings.TrimSpace(strings.TrimPrefix(line, "Part Number:"))
-			}
+		totalSlots++
+		data := parseDmiBlock(block)
+
+		// 检查是否有安装模块
+		sizeStr := data["Size"]
+		if sizeStr == "" || strings.Contains(sizeStr, "No Module Installed") {
+			continue
 		}
 
-		if populatedFlag {
-			populated++
-			memorySlotGauge.WithLabelValues(
-				slot, sizeBytes, memType, speedMhz, manufacturer, partNumber,
-			).Set(1)
-		}
+		populatedSlots++
+
+		// 转换单位并上报
+		sizeBytes := parseSizeToBytes(sizeStr)
+		speed := strings.Fields(data["Speed"])[0] // 提取 "3200 MT/s" 中的 "3200"
+
+		memorySlotGauge.WithLabelValues(
+			data["Locator"],
+			strconv.FormatInt(sizeBytes, 10),
+			data["Type"],
+			speed,
+			data["Manufacturer"],
+			data["Part Number"],
+		).Set(1)
 	}
 
-	memoryTotalSlotsGauge.Set(float64(populated)) // 或 totalSlots（包括空的）
+	memoryTotalSlotsGauge.Set(float64(totalSlots))
+}
+
+// 辅助函数：将 DMI 块解析为 Map
+func parseDmiBlock(block string) map[string]string {
+	result := make(map[string]string)
+	lines := strings.Split(block, "\n")
+	for _, line := range lines {
+		if !strings.Contains(line, ":") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		result[key] = val
+	}
+	return result
+}
+
+// 辅助函数：处理内存单位转换为 Bytes (使用 1024 进制更符合 OS 习惯)
+func parseSizeToBytes(sizeStr string) int64 {
+	re := regexp.MustCompile(`(\d+)\s*(GB|MB|KB|B)`)
+	match := re.FindStringSubmatch(sizeStr)
+	if len(match) < 3 {
+		return 0
+	}
+
+	val, _ := strconv.ParseInt(match[1], 10, 64)
+	unit := match[2]
+
+	switch unit {
+	case "GB":
+		return val * 1024 * 1024 * 1024
+	case "MB":
+		return val * 1024 * 1024
+	case "KB":
+		return val * 1024
+	default:
+		return val
+	}
 }
