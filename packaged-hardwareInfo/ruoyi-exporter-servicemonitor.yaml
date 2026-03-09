@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ruoyi-exporter-sm
+  namespace: monitoring
+  # labels:
+  #   release: prometheus-stack # 必须匹配你 kube-prometheus 的 label
+spec:
+  selector:
+    matchLabels:
+      app: ruoyi-exporter # 匹配上面 Service 的 label
+  endpoints:
+  - port: http-metrics
+    interval: 30s
+    path: /metrics
+    # 将原本instance为PodIP+端口，改为该Pod所在节点名称
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_node_name] # 获取 Pod 所在的节点名
+      targetLabel: instance # 将节点名覆盖到 instance 标签上
+      action: replace

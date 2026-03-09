@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ruoyi-exporter
+  namespace: monitoring
+  labels:
+    app: ruoyi-exporter
+spec:
+  selector:
+    matchLabels:
+      app: ruoyi-exporter
+  template:
+    metadata:
+      labels:
+        app: ruoyi-exporter
+    spec:
+      # 容忍度设置：确保在 Master 节点上也能部署
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: exporter
+        image: ruoyi-exporter:v1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http-metrics
+          containerPort: 30012
+          protocol: TCP
+        securityContext:
+          # 必须开启特权模式，否则 dmidecode 无法读取宿主机 /dev/mem
+          privileged: true
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
